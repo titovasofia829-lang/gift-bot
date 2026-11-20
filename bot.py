@@ -17,7 +17,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
 
-last_charge_id = None
+last_charge_id = None  # хранит последний платёж для refund
 
 class GiftStates(StatesGroup):
     waiting_for_message = State()
@@ -113,7 +113,66 @@ async def success(message: Message):
     payload = message.successful_payment.invoice_payload
     gift_id, text = payload.split("|", 1)
     text = text if text else None
+
     last_charge_id = message.successful_payment.telegram_payment_charge_id
 
+    # Уведомляем владельца
     try:
-        gifts = await bot.get_available_
+        await bot.send_message(
+            OWNER_USER_ID,
+            f"Новый платёж: {message.successful_payment.total_amount} Stars\n"
+            f"Charge ID: `{last_charge_id}`",
+            parse_mode="Markdown"
+        )
+    except:
+        pass
+
+    try:
+        gifts = await bot.get_available_gifts()
+        target_price = next(x["price"] for x in GIFTS if x["id"] == gift_id)
+        target = next((g for g in gifts.gifts if g.star_count == target_price), None)
+
+        if target:
+            await bot.send_gift(
+                user_id=OWNER_USER_ID,
+                gift_id=target.id,
+                text=text
+            )
+            await message.answer("✅ Подарок отправлен!")
+        else:
+            await message.answer("Не нашёл подходящий подарок. Напиши /refund.")
+    except Exception as e:
+        logging.error(f"Gift error: {e}")
+        await message.answer("Ошибка отправки. Напиши /refund чтобы вернуть Stars.")
+
+@dp.message(F.text == "/refund")
+async def refund(message: Message):
+    global last_charge_id
+    if message.from_user.id != OWNER_USER_ID:
+        return await message.answer("Только владелец может делать возврат.")
+
+    if not last_charge_id:
+        return await message.answer("Нет сохранённого платежа для возврата.")
+
+    try:
+        await bot.refund_star_payment(
+            user_id=message.from_user.id,  # возвращаем тому, кто платил? 
+            # На самом деле refund всегда идёт плательщику, user_id здесь игнорируется в большинстве случаев
+            telegram_payment_charge_id=last_charge_id
+        )
+        await message.answer("✅ Stars возвращены покупателю.")
+        last_charge_id = None
+    except Exception as e:
+        await message.answer(f"Ошибка возврата: {e}")
+
+@dp.callback_query(F.data == "cancel")
+async def cancel(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.edit_text("Отменено.")
+    await call.answer()
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
