@@ -110,28 +110,9 @@ async def success(message: Message):
     payload = message.successful_payment.invoice_payload
     gift_id, text = payload.split("|", 1)
     text = text if text else None
+    charge_id = message.successful_payment.telegram_payment_charge_id
 
     try:
         gifts = await bot.get_available_gifts()
         target_price = next(x["price"] for x in GIFTS if x["id"] == gift_id)
-        target = next((g for g in gifts.gifts if g.star_count == target_price), None)
-        if target:
-            await bot.send_gift(user_id=OWNER_USER_ID, gift_id=target.id, text=text)
-            await message.answer("✅ Подарок отправлен анонимно!")
-        else:
-            await message.answer("Не удалось найти подходящий подарок. Напиши админу.")
-    except Exception as e:
-        logging.error(e)
-        await message.answer("Ошибка при отправке подарка. Попробуй позже.")
-
-@dp.callback_query(F.data == "cancel")
-async def cancel(call: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await call.message.edit_text("Отменено.")
-    await call.answer()
-
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        target = next((g for g in gifts.gifts if g.star_count
