@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher, F
@@ -17,6 +16,8 @@ OWNER_USER_ID = 7176371503
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
+
+last_charge_id = None
 
 class GiftStates(StatesGroup):
     waiting_for_message = State()
@@ -48,15 +49,15 @@ def gifts_kb():
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
-        "Привет! Нажми кнопку ниже, чтобы анонимно поддержать админа.",
+        "Привет! Нажми кнопку ниже, чтобы анонимно подарить подарок админу.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🎁 Поддержать", callback_data="start_gift")]
+            [InlineKeyboardButton(text="🎁 Подарить админу", callback_data="start_gift")]
         ])
     )
 
 @dp.callback_query(F.data == "start_gift")
 async def start_gift(call: CallbackQuery):
-    await call.message.edit_text("Выберите сумму:", reply_markup=gifts_kb())
+    await call.message.edit_text("Выберите подарок:", reply_markup=gifts_kb())
     await call.answer()
 
 @dp.callback_query(F.data.startswith("gift:"))
@@ -66,8 +67,8 @@ async def select_gift(call: CallbackQuery, state: FSMContext):
     await state.update_data(gift=gift)
     await state.set_state(GiftStates.waiting_for_message)
     await call.message.edit_text(
-        f"Выбрано: {gift['name']} — ⭐{gift['price']}\n\n"
-        "Напишите сообщение (до 128 символов) или нажмите «Пропустить»",
+        f"Выбран: {gift['name']} — ⭐{gift['price']}\n\n"
+        "Напишите сообщение к подарку (до 128 символов) или нажмите «Пропустить»",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Пропустить", callback_data="skip")],
             [InlineKeyboardButton(text="Отмена", callback_data="cancel")]
@@ -94,8 +95,8 @@ async def send_invoice(message: Message, state: FSMContext):
     text = data.get("text") or ""
     await bot.send_invoice(
         chat_id=message.chat.id,
-        title=f"Поддержка: {gift['name']}",
-        description="Спасибо за поддержку!",
+        title=f"Анонимный подарок: {gift['name']}",
+        description="Подарок уйдёт анонимно",
         payload=f"{gift['id']}|{text}",
         currency="XTR",
         prices=[LabeledPrice(label=gift["name"], amount=gift["price"])]
@@ -108,23 +109,11 @@ async def pre_checkout(query: PreCheckoutQuery):
 
 @dp.message(F.successful_payment)
 async def success(message: Message):
-    await message.answer("✅ Спасибо! Поддержка получена.")
+    global last_charge_id
+    payload = message.successful_payment.invoice_payload
+    gift_id, text = payload.split("|", 1)
+    text = text if text else None
+    last_charge_id = message.successful_payment.telegram_payment_charge_id
+
     try:
-        await bot.send_message(
-            OWNER_USER_ID,
-            f"Новая поддержка: {message.successful_payment.total_amount} Stars"
-        )
-    except:
-        pass
-
-@dp.callback_query(F.data == "cancel")
-async def cancel(call: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await call.message.edit_text("Отменено.")
-    await call.answer()
-
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        gifts = await bot.get_available_
