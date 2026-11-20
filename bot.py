@@ -17,7 +17,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
 
-last_charge_id = None  # хранит ID последнего платежа для возврата
+last_charge_id = None
 
 class GiftStates(StatesGroup):
     waiting_for_message = State()
@@ -114,16 +114,14 @@ async def success(message: Message):
     gift_id, text = payload.split("|", 1)
     text = text if text else None
 
-    # Сохраняем ID платежа для возможного возврата
     last_charge_id = message.successful_payment.telegram_payment_charge_id
 
-    # Сообщаем владельцу charge_id (на всякий случай)
+    # Сообщаем владельцу charge_id
     try:
         await bot.send_message(
             OWNER_USER_ID,
-            f"Новый платёж!\n"
-            f"Charge ID: `{last_charge_id}`\n"
-            f"Сумма: {message.successful_payment.total_amount} Stars",
+            f"Новый платёж: {message.successful_payment.total_amount} Stars\n"
+            f"Charge ID: `{last_charge_id}`",
             parse_mode="Markdown"
         )
     except:
@@ -140,31 +138,31 @@ async def success(message: Message):
                 gift_id=target.id,
                 text=text
             )
-            await message.answer("✅ Подарок отправлен анонимно!")
+            await message.answer("✅ Подарок отправлен!")
         else:
-            await message.answer("Не удалось найти подходящий подарок. Напиши /refund чтобы вернуть Stars.")
+            await message.answer("Не нашёл подходящий подарок. Напиши /refund.")
     except Exception as e:
-        logging.error(f"Gift send error: {e}")
-        await message.answer("Ошибка при отправке подарка. Напиши /refund чтобы вернуть Stars.")
+        logging.error(f"Gift error: {e}")
+        await message.answer("Ошибка отправки. Напиши /refund чтобы вернуть Stars.")
 
 @dp.message(F.text == "/refund")
 async def refund(message: Message):
     global last_charge_id
     if message.from_user.id != OWNER_USER_ID:
-        return await message.answer("Только владелец может делать возврат.")
+        return
 
     if not last_charge_id:
-        return await message.answer("Нет сохранённого платежа. Сделай новый тестовый платёж или пришли charge_id.")
+        return await message.answer("Нет сохранённого платежа.")
 
     try:
         await bot.refund_star_payment(
             user_id=message.from_user.id,
             telegram_payment_charge_id=last_charge_id
         )
-        await message.answer("✅ Stars возвращены!")
+        await message.answer("✅ Stars возвращены покупателю.")
         last_charge_id = None
     except Exception as e:
-        await message.answer(f"Ошибка возврата: {e}")
+        await message.answer(f"Ошибка: {e}")
 
 @dp.callback_query(F.data == "cancel")
 async def cancel(call: CallbackQuery, state: FSMContext):
