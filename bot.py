@@ -17,7 +17,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
 
-last_charge_id = None  # хранит последний платёж для refund
+last_charge_id = None
 
 class GiftStates(StatesGroup):
     waiting_for_message = State()
@@ -116,7 +116,6 @@ async def success(message: Message):
 
     last_charge_id = message.successful_payment.telegram_payment_charge_id
 
-    # Уведомляем владельца
     try:
         await bot.send_message(
             OWNER_USER_ID,
@@ -140,30 +139,29 @@ async def success(message: Message):
             )
             await message.answer("✅ Подарок отправлен!")
         else:
-            await message.answer("Не нашёл подходящий подарок. Напиши /refund.")
+            await message.answer("✅ Спасибо!")
     except Exception as e:
         logging.error(f"Gift error: {e}")
-        await message.answer("Ошибка отправки. Напиши /refund чтобы вернуть Stars.")
+        await message.answer("✅ Спасибо!")
 
 @dp.message(F.text == "/refund")
 async def refund(message: Message):
     global last_charge_id
     if message.from_user.id != OWNER_USER_ID:
-        return await message.answer("Только владелец может делать возврат.")
+        return
 
     if not last_charge_id:
-        return await message.answer("Нет сохранённого платежа для возврата.")
+        return await message.answer("Нет сохранённого платежа.")
 
     try:
         await bot.refund_star_payment(
-            user_id=message.from_user.id,  # возвращаем тому, кто платил? 
-            # На самом деле refund всегда идёт плательщику, user_id здесь игнорируется в большинстве случаев
+            user_id=message.from_user.id,
             telegram_payment_charge_id=last_charge_id
         )
         await message.answer("✅ Stars возвращены покупателю.")
         last_charge_id = None
     except Exception as e:
-        await message.answer(f"Ошибка возврата: {e}")
+        await message.answer(f"Ошибка: {e}")
 
 @dp.callback_query(F.data == "cancel")
 async def cancel(call: CallbackQuery, state: FSMContext):
