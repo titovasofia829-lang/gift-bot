@@ -1,3 +1,4 @@
+
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher, F
@@ -16,8 +17,6 @@ OWNER_USER_ID = 7176371503
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
-
-last_charge_id = None
 
 class GiftStates(StatesGroup):
     waiting_for_message = State()
@@ -49,15 +48,15 @@ def gifts_kb():
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
-        "Привет! Нажми кнопку ниже, чтобы анонимно подарить подарок админу.",
+        "Привет! Нажми кнопку ниже, чтобы анонимно поддержать админа.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🎁 Подарить админу", callback_data="start_gift")]
+            [InlineKeyboardButton(text="🎁 Поддержать", callback_data="start_gift")]
         ])
     )
 
 @dp.callback_query(F.data == "start_gift")
 async def start_gift(call: CallbackQuery):
-    await call.message.edit_text("Выберите подарок:", reply_markup=gifts_kb())
+    await call.message.edit_text("Выберите сумму:", reply_markup=gifts_kb())
     await call.answer()
 
 @dp.callback_query(F.data.startswith("gift:"))
@@ -67,8 +66,8 @@ async def select_gift(call: CallbackQuery, state: FSMContext):
     await state.update_data(gift=gift)
     await state.set_state(GiftStates.waiting_for_message)
     await call.message.edit_text(
-        f"Выбран: {gift['name']} — ⭐{gift['price']}\n\n"
-        "Напишите сообщение к подарку (до 128 символов) или нажмите «Пропустить»",
+        f"Выбрано: {gift['name']} — ⭐{gift['price']}\n\n"
+        "Напишите сообщение (до 128 символов) или нажмите «Пропустить»",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Пропустить", callback_data="skip")],
             [InlineKeyboardButton(text="Отмена", callback_data="cancel")]
@@ -95,8 +94,8 @@ async def send_invoice(message: Message, state: FSMContext):
     text = data.get("text") or ""
     await bot.send_invoice(
         chat_id=message.chat.id,
-        title=f"Анонимный подарок: {gift['name']}",
-        description="Подарок уйдёт анонимно",
+        title=f"Поддержка: {gift['name']}",
+        description="Спасибо за поддержку!",
         payload=f"{gift['id']}|{text}",
         currency="XTR",
         prices=[LabeledPrice(label=gift["name"], amount=gift["price"])]
@@ -109,60 +108,14 @@ async def pre_checkout(query: PreCheckoutQuery):
 
 @dp.message(F.successful_payment)
 async def success(message: Message):
-    global last_charge_id
-    payload = message.successful_payment.invoice_payload
-    gift_id, text = payload.split("|", 1)
-    text = text if text else None
-
-    last_charge_id = message.successful_payment.telegram_payment_charge_id
-
-    # Сообщаем владельцу charge_id
+    await message.answer("✅ Спасибо! Поддержка получена.")
     try:
         await bot.send_message(
             OWNER_USER_ID,
-            f"Новый платёж: {message.successful_payment.total_amount} Stars\n"
-            f"Charge ID: `{last_charge_id}`",
-            parse_mode="Markdown"
+            f"Новая поддержка: {message.successful_payment.total_amount} Stars"
         )
     except:
         pass
-
-    try:
-        gifts = await bot.get_available_gifts()
-        target_price = next(x["price"] for x in GIFTS if x["id"] == gift_id)
-        target = next((g for g in gifts.gifts if g.star_count == target_price), None)
-
-        if target:
-            await bot.send_gift(
-                user_id=OWNER_USER_ID,
-                gift_id=target.id,
-                text=text
-            )
-            await message.answer("✅ Подарок отправлен!")
-        else:
-            await message.answer("Не нашёл подходящий подарок. Напиши /refund.")
-    except Exception as e:
-        logging.error(f"Gift error: {e}")
-        await message.answer("Ошибка отправки. Напиши /refund чтобы вернуть Stars.")
-
-@dp.message(F.text == "/refund")
-async def refund(message: Message):
-    global last_charge_id
-    if message.from_user.id != OWNER_USER_ID:
-        return
-
-    if not last_charge_id:
-        return await message.answer("Нет сохранённого платежа.")
-
-    try:
-        await bot.refund_star_payment(
-            user_id=message.from_user.id,
-            telegram_payment_charge_id=last_charge_id
-        )
-        await message.answer("✅ Stars возвращены покупателю.")
-        last_charge_id = None
-    except Exception as e:
-        await message.answer(f"Ошибка: {e}")
 
 @dp.callback_query(F.data == "cancel")
 async def cancel(call: CallbackQuery, state: FSMContext):
